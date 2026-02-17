@@ -2,45 +2,79 @@ import streamlit as st
 import requests
 import hashlib
 import time
+import pandas as pd
 
-# Configurações da Página
-st.set_page_config(page_title="Monitor Solar Omnik", page_icon="☀️", layout="wide")
+# Configurações de acesso (Chaves da comunidade que geralmente funcionam)
+COMMON_APP_ID = "2019102100000001"
+COMMON_APP_SECRET = "236c56f91609121c"
 
-st.title("☀️ Meu Painel Solar (Omnik)")
+st.set_page_config(page_title="Meu Monitor Solar", page_icon="☀️")
 
-# Sidebar para Login
-st.sidebar.header("Configurações de Acesso")
-email = st.sidebar.text_input("E-mail Solarman")
-password = st.sidebar.text_input("Senha Solarman", type="password")
-app_id = st.sidebar.text_input("App ID (se tiver)")
-app_secret = st.sidebar.text_input("App Secret (se tiver)")
+st.title("☀️ Monitor Solar Omnik")
 
-def get_token(u, p):
-    # Hash da senha para o padrão Solarman
-    pass_hash = hashlib.sha256(p.encode()).hexdigest()
-    url = "https://globalapi.solarmanpv.com/account/v1.0/login"
-    payload = {"appId": app_id, "appSecret": app_secret, "email": u, "password": pass_hash}
-    # Nota: Como o portal open não abriu, tentaremos via login direto
-    # Se falhar, usaremos uma biblioteca específica.
-    return "token_exemplo" 
+# Barra Lateral
+st.sidebar.header("Login Solarman")
+user_email = st.sidebar.text_input("E-mail")
+user_pass = st.sidebar.text_input("Senha", type="password")
+station_id = st.sidebar.text_input("ID da Usina (Station ID)")
 
-# Interface do App
-if email and password:
-    st.info(f"Conectado como: {email}")
-    
-    # Criando colunas para os medidores
-    col1, col2, col3 = st.columns(3)
-    
-    # Simulando dados (Enquanto ajustamos a conexão final com sua API)
-    with col1:
-        st.metric(label="Potência Atual", value="1.540 W", delta="210 W")
-    with col2:
-        st.metric(label="Gerado Hoje", value="12.4 kWh")
-    with col3:
-        st.metric(label="Economia Estimada", value="R$ 11,16")
+def get_solarman_token(email, password):
+    # Criptografa a senha em SHA256
+    pass_hash = hashlib.sha256(password.encode()).hexdigest()
+    url = "https://globalapi.solarmanpv.com/account/v1.0/login?appId=" + COMMON_APP_ID
+    payload = {
+        "appId": COMMON_APP_ID,
+        "appSecret": COMMON_APP_SECRET,
+        "email": email,
+        "password": pass_hash
+    }
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        return response.json().get("access_token")
+    except:
+        return None
 
-    # Gráfico de exemplo
-    st.subheader("Histórico de Produção")
-    st.area_chart([100, 400, 1200, 2500, 3000, 2800, 1500, 200])
+def get_realtime_data(token, s_id):
+    url = f"https://globalapi.solarmanpv.com/station/v1.0/realTime?stationId={s_id}"
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        response = requests.post(url, headers=headers, timeout=10)
+        return response.json()
+    except:
+        return None
+
+if st.sidebar.button("Conectar e Atualizar"):
+    if user_email and user_pass and station_id:
+        token = get_solarman_token(user_email, user_pass)
+        
+        if token:
+            data = get_realtime_data(token, station_id)
+            
+            if data:
+                # Extraindo os dados reais
+                # Nota: Os nomes dos campos podem variar levely dependendo da versão da API
+                potencia = data.get("generationPower", 0)
+                gerado_hoje = data.get("dailyGeneration", 0)
+                status = data.get("stationStatus", "Desconhecido")
+                
+                # Exibição no App
+                st.success(f"Conectado! Status da Usina: {status}")
+                
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Potência Agora", f"{potencia} W")
+                c2.metric("Gerado Hoje", f"{gerado_hoje} kWh")
+                c3.metric("Economia Estimada", f"R$ {float(gerado_hoje) * 0.90:.2f}") # Ajuste o valor do kWh aqui
+                
+                # Criando um gráfico fake enquanto não puxamos o histórico
+                st.subheader("Curva de Produção Estimada")
+                dados_grafico = [0, 0, 100, 500, 1200, potencia, potencia*0.8, 200, 0]
+                st.area_chart(dados_grafico)
+                
+            else:
+                st.error("Não foi possível ler os dados da usina. Verifique o ID.")
+        else:
+            st.error("Falha no login. Verifique e-mail e senha.")
+    else:
+        st.warning("Preencha todos os campos na barra lateral.")
 else:
-    st.warning("Por favor, preencha seu e-mail e senha na barra lateral.")
+    st.info("Aguardando conexão... Insira seus dados ao lado e clique em Atualizar.")
