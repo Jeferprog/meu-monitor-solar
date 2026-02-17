@@ -12,9 +12,9 @@ st.title("☀️ Monitor Solar Omnik")
 
 # Barra Lateral
 st.sidebar.header("Configuração de Acesso")
-user_email = "liaejefer@hotmail.com"
-user_pass = "Je08mwd2501L@"
-station_id = "1704504"
+user_email = st.sidebar.text_input("E-mail Cadastrado")
+user_pass = st.sidebar.text_input("Senha")
+station_id = st.sidebar.text_input("ID da Usina (Station ID)")
 
 def get_solarman_token(email, password):
     # A Solarman exige a senha em formato SHA256 (Hex)
