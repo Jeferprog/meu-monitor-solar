@@ -58,10 +58,32 @@ def parse_response(data: bytes) -> dict:
     }
 
 
+def get_all_local_ips() -> list[str]:
+    """Retorna todos os IPs IPv4 locais de todas as interfaces."""
+    ips = []
+    try:
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            ip = info[4][0]
+            if not ip.startswith('127.'):
+                ips.append(ip)
+    except Exception:
+        pass
+    # fallback via rota padrão
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(('8.8.8.8', 80))
+            ip = s.getsockname()[0]
+            if ip not in ips:
+                ips.append(ip)
+    except Exception:
+        pass
+    return list(dict.fromkeys(ips))  # remove duplicatas mantendo ordem
+
+
 def get_local_ip() -> str:
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        s.connect(('8.8.8.8', 80))
-        return s.getsockname()[0]
+    ips = get_all_local_ips()
+    return ips[0] if ips else '127.0.0.1'
 
 
 def scan_subnet(subnet: str) -> list[tuple[str, int]]:

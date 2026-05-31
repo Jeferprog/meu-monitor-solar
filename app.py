@@ -32,9 +32,17 @@ if ip_mode == "Inserir manualmente":
 # ─── Descoberta automática ────────────────────────────────────────────────────
 
 if ip_mode == "Descobrir automaticamente":
+    all_ips = omnik.get_all_local_ips()
+    subnets = list(dict.fromkeys(ip.rsplit('.', 1)[0] + '.0/24' for ip in all_ips))
+
+    subnet_escolhida = st.sidebar.selectbox(
+        "Interface de rede",
+        options=subnets,
+        help="Escolha a subnet do Wi-Fi onde o inversor está conectado."
+    )
+
     if st.sidebar.button("🔍 Buscar inversor na rede"):
-        local_ip = omnik.get_local_ip()
-        subnet = local_ip.rsplit('.', 1)[0] + '.0/24'
+        subnet = subnet_escolhida
         st.info(f"Escaneando subnet **{subnet}** — aguarde...")
 
         with st.spinner("Procurando inversor..."):
