@@ -41,8 +41,10 @@ if ip_mode == "Descobrir automaticamente":
             found = omnik.scan_subnet(subnet)
 
         if found:
-            st.success(f"Inversor encontrado: **{', '.join(found)}**")
-            st.session_state['inverter_ip'] = found[0]
+            ip, porta = found[0]
+            st.success(f"Inversor encontrado: **{ip}** (porta {porta})")
+            st.session_state['inverter_ip'] = ip
+            st.session_state['inverter_port'] = porta
         else:
             st.error(
                 "Nenhum dispositivo encontrado na porta 8899. "
@@ -51,7 +53,7 @@ if ip_mode == "Descobrir automaticamente":
 
     if 'inverter_ip' in st.session_state:
         inverter_ip = st.session_state['inverter_ip']
-        st.sidebar.success(f"IP: {inverter_ip}")
+        st.sidebar.success(f"IP: {inverter_ip} | Porta: {st.session_state.get('inverter_port', omnik.OMNIK_PORT)}")
 
 # ─── Leitura dos dados ────────────────────────────────────────────────────────
 

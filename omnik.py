@@ -1,11 +1,12 @@
-"""Protocolo local para inversores Omnik via porta TCP 8899."""
+"""Protocolo local para inversores Omnik via porta TCP/UDP 8899 ou 48899."""
 import socket
 import struct
 import concurrent.futures
 import ipaddress
 
 OMNIK_PORT = 8899
-SCAN_TIMEOUT = 0.5
+OMNIK_PORT_ALT = 48899
+SCAN_TIMEOUT = 0.8
 
 
 def generate_request(serial_no: int) -> bytes:
@@ -63,22 +64,44 @@ def get_local_ip() -> str:
         return s.getsockname()[0]
 
 
-def scan_subnet(subnet: str) -> list[str]:
+def scan_subnet(subnet: str) -> list[tuple[str, int]]:
+    """Retorna lista de (ip, porta) encontrados com inversor Omnik."""
     network = ipaddress.IPv4Network(subnet, strict=False)
     found = []
 
-    def check(ip):
+    def check_tcp(ip, port):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(SCAN_TIMEOUT)
-                if s.connect_ex((str(ip), OMNIK_PORT)) == 0:
-                    return str(ip)
+                if s.connect_ex((str(ip), port)) == 0:
+                    return (str(ip), port)
         except Exception:
             pass
         return None
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=100) as ex:
-        results = ex.map(check, network.hosts())
-        found = [r for r in results if r]
+    def check_udp(ip, port):
+        """Tenta enviar broadcast UDP e aguarda resposta."""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.settimeout(SCAN_TIMEOUT)
+                s.sendto(b'\x68\x02\x40\x30', (str(ip), port))
+                data, _ = s.recvfrom(1024)
+                if data:
+                    return (str(ip), port)
+        except Exception:
+            pass
+        return None
+
+    hosts = list(network.hosts())
+    tasks = [(ip, p) for ip in hosts for p in (OMNIK_PORT, OMNIK_PORT_ALT)]
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=150) as ex:
+        tcp_results = ex.map(lambda t: check_tcp(*t), tasks)
+        found = [r for r in tcp_results if r]
+
+    if not found:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=150) as ex:
+            udp_results = ex.map(lambda t: check_udp(*t), tasks)
+            found = [r for r in udp_results if r]
 
     return found
