@@ -1,5 +1,6 @@
 import streamlit as st
 import omnik
+import time
 
 # ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -66,11 +67,18 @@ if ip_mode == "Descobrir automaticamente":
 # ─── Leitura dos dados ────────────────────────────────────────────────────────
 
 if inverter_ip:
-    col_btn, col_ip = st.columns([1, 2])
+    col_btn, col_auto, col_ip = st.columns([1, 1, 2])
     with col_btn:
         conectar = st.button("⚡ Ler dados agora", type="primary", use_container_width=True)
+    with col_auto:
+        auto = st.toggle("Auto (30s)", value=False)
     with col_ip:
-        st.caption(f"Conectando em `{inverter_ip}:{omnik.OMNIK_PORT}`")
+        st.caption(f"Conectando em `{inverter_ip}`")
+
+    if auto and 'last_update' not in st.session_state:
+        conectar = True
+    elif auto and time.time() - st.session_state.get('last_update', 0) >= 30:
+        conectar = True
 
     if conectar:
         with st.spinner("Conectando ao inversor..."):
@@ -105,6 +113,11 @@ if inverter_ip:
 
             if dados:
                 st.session_state['dados'] = dados
+                st.session_state['last_update'] = time.time()
+
+    if auto:
+        time.sleep(30)
+        st.rerun()
 
 # ─── Exibição dos dados ───────────────────────────────────────────────────────
 
@@ -116,18 +129,23 @@ if 'dados' in st.session_state:
     st.divider()
     st.subheader("Produção atual")
 
-    status_txt = "🟢 Em operação" if d.get('status', 0) == 1 else "🔴 Sem geração"
-    st.info(f"**Status:** {status_txt} | **Modelo:** {d.get('modelo', '—')} | **Potência nominal:** {d.get('potencia_nominal', 0)} W")
+    gerando = d.get('ac_potencia', 0) > 0
+    status_txt = "🟢 Gerando energia" if gerando else "🔴 Sem geração (sem sol)"
+    st.info(f"**Status:** {status_txt} | **Modelo:** {d.get('modelo', '—')} | **Nominal:** {d.get('potencia_nominal', 0)} W")
 
     c1, c2, c3 = st.columns(3)
     c1.metric("⚡ Potência agora", f"{d.get('ac_potencia', 0)} W")
-    c2.metric("📅 Energia hoje", f"{d.get('energia_hoje', 0):.3f} kWh")
-    c3.metric("🌡️ Temperatura", f"{d.get('temperatura', '—')} °C")
+    c2.metric("📅 Energia hoje", f"{d.get('energia_hoje', 0):.2f} kWh")
+    c3.metric("📊 Total acumulado", f"{d.get('energia_total', 0):.1f} kWh")
 
     energia_hoje = d.get('energia_hoje', 0)
     if energia_hoje > 0:
         economia = energia_hoje * 0.95
         st.success(f"💰 Economia estimada hoje: **R$ {economia:.2f}**")
+
+    temp = d.get('temperatura', 0)
+    if temp and temp > 0:
+        st.caption(f"🌡️ Temperatura do inversor: {temp} °C")
 
     if 'ac_tensao' in d or 'pv1_tensao' in d:
         st.divider()
