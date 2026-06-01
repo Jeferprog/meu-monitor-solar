@@ -116,34 +116,40 @@ if 'dados' in st.session_state:
     st.divider()
     st.subheader("Produção atual")
 
+    status_txt = "🟢 Em operação" if d.get('status', 0) == 1 else "🔴 Sem geração"
+    st.info(f"**Status:** {status_txt} | **Modelo:** {d.get('modelo', '—')} | **Potência nominal:** {d.get('potencia_nominal', 0)} W")
+
     c1, c2, c3 = st.columns(3)
-    c1.metric("⚡ Potência AC", f"{d['ac_potencia']} W")
-    c2.metric("📅 Energia Hoje", f"{d['energia_hoje']} kWh")
-    c3.metric("📊 Energia Total", f"{d['energia_total']} kWh")
+    c1.metric("⚡ Potência agora", f"{d.get('ac_potencia', 0)} W")
+    c2.metric("📅 Energia hoje", f"{d.get('energia_hoje', 0):.3f} kWh")
+    c3.metric("🌡️ Temperatura", f"{d.get('temperatura', '—')} °C")
 
-    economia = d['energia_hoje'] * 0.95
-    st.success(f"💰 Economia estimada hoje: **R$ {economia:.2f}**")
+    energia_hoje = d.get('energia_hoje', 0)
+    if energia_hoje > 0:
+        economia = energia_hoje * 0.95
+        st.success(f"💰 Economia estimada hoje: **R$ {economia:.2f}**")
 
-    st.divider()
-    st.subheader("Painéis (CC)")
+    if 'ac_tensao' in d or 'pv1_tensao' in d:
+        st.divider()
+        st.subheader("Painéis (CC)")
+        p1, p2 = st.columns(2)
+        p1.metric("String 1 — Tensão", f"{d.get('pv1_tensao', '—')} V")
+        p1.metric("String 1 — Corrente", f"{d.get('pv1_corrente', '—')} A")
+        p2.metric("String 2 — Tensão", f"{d.get('pv2_tensao', '—')} V")
+        p2.metric("String 2 — Corrente", f"{d.get('pv2_corrente', '—')} A")
 
-    p1, p2 = st.columns(2)
-    p1.metric("String 1 — Tensão", f"{d['pv1_tensao']} V")
-    p1.metric("String 1 — Corrente", f"{d['pv1_corrente']} A")
-    p2.metric("String 2 — Tensão", f"{d['pv2_tensao']} V")
-    p2.metric("String 2 — Corrente", f"{d['pv2_corrente']} A")
+        st.divider()
+        st.subheader("Rede elétrica (CA)")
+        a1, a2 = st.columns(2)
+        a1.metric("Tensão AC", f"{d.get('ac_tensao', '—')} V")
+        a2.metric("Frequência", f"{d.get('ac_frequencia', '—')} Hz")
 
-    st.divider()
-    st.subheader("Rede elétrica (CA)")
-
-    a1, a2, a3 = st.columns(3)
-    a1.metric("Tensão AC", f"{d['ac_tensao']} V")
-    a2.metric("Frequência", f"{d['ac_frequencia']} Hz")
-    a3.metric("Temperatura", f"{d['temperatura']} °C")
-
-    st.divider()
-    st.metric("⏱ Horas de operação total", f"{d['horas_total']} h")
-
-    with st.expander("🔧 Dados brutos (diagnóstico)"):
-        st.caption(f"Tamanho da resposta: {d['_raw_len']} bytes")
-        st.code(d['_raw_hex'], language='text')
+    with st.expander("🔧 Campos brutos do inversor"):
+        campos = d.get('_campos_brutos', [])
+        if campos:
+            for i, v in enumerate(campos):
+                st.text(f"[{i}] = {v!r}")
+        elif '_raw_hex' in d:
+            st.code(d['_raw_hex'][:3000], language='text')
+        elif '_raw_html' in d:
+            st.code(d['_raw_html'][:3000], language='html')
