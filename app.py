@@ -74,31 +74,44 @@ if inverter_ip:
 
     if conectar:
         with st.spinner("Conectando ao inversor..."):
-            try:
-                raw = omnik.read_inverter(inverter_ip, serial_no)
-                dados = omnik.parse_response(raw)
+            dados = None
+
+            # Tenta interface HTTP primeiro
+            http_dados = omnik.read_via_http(inverter_ip)
+            if http_dados and len([k for k in http_dados if not k.startswith('_')]) > 0:
+                dados = http_dados
+                st.session_state['metodo'] = 'HTTP'
+            else:
+                # Fallback: protocolo binário TCP porta 8899
+                if http_dados:
+                    with st.expander("🌐 Conteúdo bruto da interface web (diagnóstico)"):
+                        st.code(http_dados.get('_raw_html', '')[:3000], language='html')
+                try:
+                    raw = omnik.read_inverter(inverter_ip, serial_no)
+                    dados = omnik.parse_response(raw)
+                    st.session_state['metodo'] = 'TCP:8899'
+                except ConnectionRefusedError:
+                    st.error("Conexão recusada na porta 8899. Verifique se o IP está correto.")
+                    st.stop()
+                except TimeoutError:
+                    st.error("Tempo esgotado. O inversor não respondeu.")
+                    st.stop()
+                except ValueError as e:
+                    st.warning(str(e))
+                    st.stop()
+                except Exception as e:
+                    st.error(f"Erro inesperado: {e}")
+                    st.stop()
+
+            if dados:
                 st.session_state['dados'] = dados
-                st.session_state['raw'] = raw
-            except ConnectionRefusedError:
-                st.error("Conexão recusada. Verifique se o IP está correto e o inversor está ligado.")
-                st.stop()
-            except TimeoutError:
-                st.error("Tempo esgotado. O inversor não respondeu.")
-                st.stop()
-            except ValueError as e:
-                st.warning(str(e))
-                if 'raw' in st.session_state:
-                    with st.expander("📦 Dados brutos recebidos"):
-                        st.code(st.session_state['raw'].hex(' '), language='text')
-                st.stop()
-            except Exception as e:
-                st.error(f"Erro inesperado: {e}")
-                st.stop()
 
 # ─── Exibição dos dados ───────────────────────────────────────────────────────
 
 if 'dados' in st.session_state:
     d = st.session_state['dados']
+    metodo = st.session_state.get('metodo', '?')
+    st.caption(f"Fonte: `{metodo}` | IP: `{inverter_ip}`")
 
     st.divider()
     st.subheader("Produção atual")

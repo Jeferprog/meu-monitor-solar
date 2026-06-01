@@ -1,12 +1,99 @@
-"""Protocolo local para inversores Omnik via porta TCP/UDP 8899 ou 48899."""
+"""Protocolo local para inversores Omnik via HTTP web interface ou TCP 8899."""
 import socket
 import struct
 import concurrent.futures
 import ipaddress
+import urllib.request
+import re
 
 OMNIK_PORT = 8899
 OMNIK_PORT_ALT = 48899
 SCAN_TIMEOUT = 0.8
+
+
+def read_via_http(ip: str, timeout: float = 10.0) -> dict | None:
+    """Tenta ler dados do inversor pela interface web HTTP.
+    Testa endpoints conhecidos dos módulos WiFi Omnik/Ginlong."""
+    endpoints = [
+        f'http://{ip}/js/status.js',
+        f'http://{ip}/inverter.cgi?embed',
+        f'http://{ip}/status.html',
+        f'http://{ip}/info.xml',
+        f'http://{ip}/',
+    ]
+    for url in endpoints:
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                content = resp.read().decode('utf-8', errors='replace')
+                parsed = _parse_http_content(content, url)
+                if parsed:
+                    parsed['_source_url'] = url
+                    parsed['_raw_html'] = content
+                    return parsed
+        except Exception:
+            continue
+    return None
+
+
+def _parse_http_content(content: str, url: str) -> dict | None:
+    """Extrai valores numéricos do HTML/JS/XML retornado pelo inversor."""
+    result = {}
+
+    # Padrão JavaScript: var webdata_now_p = "1234";
+    js_vars = re.findall(r'var\s+(\w+)\s*=\s*["\']?([\d.]+)["\']?', content)
+    if js_vars:
+        data = {k: v for k, v in js_vars}
+        mapping = {
+            'webdata_now_p':    ('ac_potencia',    1.0),
+            'webdata_today_e':  ('energia_hoje',   1.0),
+            'webdata_total_e':  ('energia_total',  1.0),
+            'webdata_alarm':    ('alarme',         1.0),
+            'webdata_uac':      ('ac_tensao',      1.0),
+            'webdata_fac':      ('ac_frequencia',  1.0),
+            'webdata_tmp':      ('temperatura',    1.0),
+            'webdata_pv1_vol':  ('pv1_tensao',     1.0),
+            'webdata_pv1_cur':  ('pv1_corrente',   1.0),
+            'webdata_pv2_vol':  ('pv2_tensao',     1.0),
+            'webdata_pv2_cur':  ('pv2_corrente',   1.0),
+        }
+        for js_key, (field, factor) in mapping.items():
+            if js_key in data:
+                try:
+                    result[field] = float(data[js_key]) * factor
+                except ValueError:
+                    pass
+        if result:
+            return result
+
+    # Padrão XML: <Power>1234</Power>
+    xml_pairs = re.findall(r'<(\w+)>([\d.]+)</\1>', content)
+    if xml_pairs:
+        xml_map = {
+            'Power':        'ac_potencia',
+            'EToday':       'energia_hoje',
+            'ETotal':       'energia_total',
+            'Uac':          'ac_tensao',
+            'Fac':          'ac_frequencia',
+            'Temperature':  'temperatura',
+            'Vpv1':         'pv1_tensao',
+            'Ipv1':         'pv1_corrente',
+            'Vpv2':         'pv2_tensao',
+            'Ipv2':         'pv2_corrente',
+        }
+        for tag, val in xml_pairs:
+            if tag in xml_map:
+                try:
+                    result[xml_map[tag]] = float(val)
+                except ValueError:
+                    pass
+        if result:
+            return result
+
+    # Retorna None se não reconheceu nenhum dado — conteúdo bruto salvo em _raw_html
+    if len(content) > 50:
+        return {'_raw_html': content}
+    return None
 
 
 def generate_request(serial_no: int) -> bytes:
