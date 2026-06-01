@@ -49,7 +49,7 @@ def _parse_http_content(content: str, url: str) -> dict | None:
             result['potencia_nominal'] = int(fields[4]) if len(fields) > 4 and fields[4].isdigit() else 0
             result['ac_potencia']      = int(fields[5]) if len(fields) > 5 and fields[5].isdigit() else 0
             result['energia_hoje_wh']  = int(fields[6]) if len(fields) > 6 and fields[6].isdigit() else 0
-            result['energia_hoje']     = result['energia_hoje_wh'] / 1000.0
+            result['energia_hoje']     = result['energia_hoje_wh'] / 100.0
             result['temperatura']      = int(fields[7]) if len(fields) > 7 and fields[7].isdigit() else 0
             result['status']           = int(fields[9]) if len(fields) > 9 and fields[9].isdigit() else 0
             result['_campos_brutos']   = fields
