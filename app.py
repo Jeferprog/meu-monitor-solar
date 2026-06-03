@@ -57,13 +57,13 @@ def _coletar_historico(token, escolha):
             diag[f"dia_{sn}_erro"] = str(e)
         try:
             r = solarman.get_historical(token, sn, str(ini_mes), str(hoje), solarman.TIME_MONTH)
-            diarios.append(solarman.parse_historico_energia(r, "%d/%m"))
+            diarios.append(solarman.parse_historico_energia(r, "mes"))
             diag[f"mes_{sn}"] = r
         except Exception as e:
             diag[f"mes_{sn}_erro"] = str(e)
         try:
             r = solarman.get_historical(token, sn, str(ini_ano), str(hoje), solarman.TIME_YEAR)
-            mensais.append(solarman.parse_historico_energia(r, "%m/%Y"))
+            mensais.append(solarman.parse_historico_energia(r, "ano"))
             diag[f"ano_{sn}"] = r
         except Exception as e:
             diag[f"ano_{sn}_erro"] = str(e)

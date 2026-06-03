@@ -187,25 +187,39 @@ def parse_curva_potencia(raw: dict) -> list:
     return pontos
 
 
-def parse_historico_energia(raw: dict, fmt: str = "%d/%m") -> list:
+def _fmt_label(ct, kind: str) -> str:
+    """Formata o collectTime de acordo com o tipo de histórico.
+
+    - epoch (segundos): hora ou dia
+    - 'AAAA-MM-DD' (mensal): 'DD/MM'
+    - 'AAAA-M' (anual): 'MM/AAAA'
+    """
+    s = str(ct)
+    if s.isdigit() and len(s) >= 9:
+        fmt = "%H:%M" if kind == "curva" else "%d/%m"
+        return datetime.datetime.fromtimestamp(int(s), TZ).strftime(fmt)
+    parts = s.split("-")
+    try:
+        if kind == "ano" and len(parts) == 2:
+            return f"{int(parts[1]):02d}/{parts[0]}"
+        if kind == "mes" and len(parts) == 3:
+            return f"{int(parts[2]):02d}/{int(parts[1]):02d}"
+    except (ValueError, IndexError):
+        pass
+    return s
+
+
+def parse_historico_energia(raw: dict, kind: str = "mes") -> list:
     """Produção por período: lista de (label, kWh).
 
-    Tenta produção diária ativa (Etdy_ge0/Etdy_ge1); cai para campos genéricos
-    de geração ou para o produto encontrado em 'generationValue'.
+    A API usa a chave 'generation' (mensal/anual); mantemos fallback para
+    as chaves de produção diária do tempo real.
     """
     pontos = []
     for p in raw.get("paramDataList", []):
-        val = _ponto_valor(p, "Etdy_ge0", "Etdy_ge1", "Et_ge0")
-        if val is None:
-            # alguns formatos trazem direto no ponto
-            for k in ("generationValue", "value", "energy"):
-                try:
-                    val = float(p.get(k))
-                    break
-                except (TypeError, ValueError):
-                    continue
+        val = _ponto_valor(p, "generation", "Etdy_ge0", "Etdy_ge1", "Et_ge0")
         if val is not None:
-            pontos.append((_label_tempo(p, fmt), val))
+            pontos.append((_fmt_label(p.get("collectTime"), kind), val))
     return pontos
 
 
