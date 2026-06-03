@@ -8,6 +8,29 @@ BASE_URL = "https://globalapi.solarmanpv.com"
 DEVICE_SN = "BRBN302019653063"
 LOGGER_SNS = [645450063, 3912868676]
 
+# Dispositivos disponíveis (rótulo -> SN)
+DEVICES = {
+    "Inversor (BRBN30...653063)": "BRBN302019653063",
+    "Micro-inversor (2302026889)": "2302026889",
+}
+
+
+def combinar(dados_list: list) -> dict:
+    """Soma métricas de vários inversores em uma visão única da usina."""
+    soma_keys = ["ac_potencia", "energia_hoje", "energia_total",
+                 "pv1_potencia", "pv2_potencia"]
+    combinado = {k: 0 for k in soma_keys}
+    for d in dados_list:
+        for k in soma_keys:
+            combinado[k] += d.get(k) or 0
+    # Médias/máximos para grandezas que não somam
+    temps = [d.get("temperatura") for d in dados_list if d.get("temperatura")]
+    combinado["temperatura"] = max(temps) if temps else 0
+    combinado["modelo"] = f"{len(dados_list)} inversores (somados)"
+    combinado["potencia_nominal"] = 0
+    combinado["_combinado"] = [d.get("_raw_solarman") for d in dados_list]
+    return combinado
+
 
 def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()

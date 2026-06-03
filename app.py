@@ -23,7 +23,8 @@ fonte = st.sidebar.radio("Fonte de dados", ["☁️ Solarman (nuvem)", "🏠 Inv
 # ─── Modo Solarman ────────────────────────────────────────────────────────────
 
 if fonte == "☁️ Solarman (nuvem)":
-    device_sn = st.sidebar.text_input("SN do inversor", value=SOLARMAN_DEVICE_SN)
+    opcoes = ["🔆 Usina (somar os dois)"] + list(solarman.DEVICES.keys())
+    escolha = st.sidebar.selectbox("Dispositivo", options=opcoes)
 
     col_btn, col_auto = st.columns([1, 1])
     with col_btn:
@@ -40,11 +41,24 @@ if fonte == "☁️ Solarman (nuvem)":
         with st.spinner("Conectando à API Solarman..."):
             try:
                 token = solarman.get_token(SOLARMAN_EMAIL, SOLARMAN_PASSWORD)
-                raw = solarman.get_realtime_data(token, device_sn)
-                dados = solarman.parse_realtime(raw)
+
+                if escolha.startswith("🔆"):
+                    # Soma todos os dispositivos cadastrados
+                    lista = []
+                    for label, sn in solarman.DEVICES.items():
+                        raw = solarman.get_realtime_data(token, sn)
+                        lista.append(solarman.parse_realtime(raw))
+                    dados = solarman.combinar(lista)
+                    metodo = "Solarman API — Usina (somada)"
+                else:
+                    sn = solarman.DEVICES[escolha]
+                    raw = solarman.get_realtime_data(token, sn)
+                    dados = solarman.parse_realtime(raw)
+                    metodo = f"Solarman API — {escolha}"
+
                 st.session_state['dados'] = dados
                 st.session_state['last_update'] = time.time()
-                st.session_state['metodo'] = 'Solarman API'
+                st.session_state['metodo'] = metodo
             except Exception as e:
                 st.error(f"Erro ao consultar Solarman: {e}")
                 st.stop()
