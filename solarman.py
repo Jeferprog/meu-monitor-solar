@@ -50,6 +50,7 @@ def parse_realtime(raw: dict) -> dict:
     por trechos do nome (`name`) e da `key`, em vez de nomes exatos.
     """
     items = raw.get("dataList", [])
+    by_key = {it.get("key"): it for it in items}
 
     def _num(v):
         try:
@@ -57,38 +58,40 @@ def parse_realtime(raw: dict) -> dict:
         except (TypeError, ValueError):
             return None
 
-    def find(*needles, prefer_unit=None):
-        """Retorna o primeiro valor numérico cujo name/key contém algum dos trechos."""
-        needles = [n.lower() for n in needles]
-        for it in items:
-            name = str(it.get("name", "")).lower()
-            key = str(it.get("key", "")).lower()
-            haystack = name + " " + key
-            if any(n in haystack for n in needles):
-                if prefer_unit and prefer_unit.lower() not in str(it.get("unit", "")).lower():
-                    continue
+    def val(*keys):
+        """Valor numérico pela key exata (tenta cada uma na ordem)."""
+        for k in keys:
+            it = by_key.get(k)
+            if it is not None:
                 v = _num(it.get("value"))
                 if v is not None:
                     return v
         return 0
 
+    def text(*keys):
+        for k in keys:
+            it = by_key.get(k)
+            if it is not None and it.get("value") is not None:
+                return it["value"]
+        return None
+
     result = {
-        # Potência ativa de saída AC (W)
-        "ac_potencia":      find("total ac output power", "output active power",
-                                 "active power", "generation power", "ac_power", "apo"),
-        # Energia gerada hoje (kWh)
-        "energia_hoje":     find("daily production", "production today", "today production",
-                                 "daily generation", "e_today", "etoday", "et_ge0"),
-        # Energia acumulada total (kWh)
-        "energia_total":    find("cumulative production", "total production",
-                                 "total generation", "e_total", "etotal", "et_ge"),
-        "temperatura":      find("temperature", "temp"),
-        "pv1_tensao":       find("dc voltage pv1", "pv1 voltage", "voltage pv1", "dv1"),
-        "pv1_corrente":     find("dc current pv1", "pv1 current", "current pv1", "dc1"),
-        "pv2_tensao":       find("dc voltage pv2", "pv2 voltage", "voltage pv2", "dv2"),
-        "pv2_corrente":     find("dc current pv2", "pv2 current", "current pv2", "dc2"),
-        "ac_tensao":        find("ac voltage", "grid voltage", "av1"),
-        "ac_frequencia":    find("ac frequency", "grid frequency", "frequency"),
+        # Chaves reais do inversor (confirmadas via Dados brutos)
+        "ac_potencia":      val("APo_t1"),       # Saída CA Potência Total (Ativa) - W
+        "energia_hoje":     val("Etdy_ge1"),     # Produção diária (ativa) - kWh
+        "energia_total":    val("Et_ge0"),       # Produção acumulada (ativa) - kWh
+        "temperatura":      val("INV_T0"),       # Temperatura do Inversor - °C
+        "pv1_tensao":       val("DV1"),
+        "pv1_corrente":     val("DC1"),
+        "pv1_potencia":     val("DP1"),
+        "pv2_tensao":       val("DV2"),
+        "pv2_corrente":     val("DC2"),
+        "pv2_potencia":     val("DP2"),
+        "ac_tensao":        val("AV1"),           # Voltagem AC R/U/A
+        "ac_corrente":      val("AC1"),
+        "ac_frequencia":    val("A_Fo1"),         # Frequência de Saída AC R
+        "estado":           text("INV_ST1"),      # Estado do inversor
+        "horas_operacao":   val("t_w_hou1"),
         "modelo":           raw.get("deviceType", "Solarman"),
         "potencia_nominal": 0,
         "_raw_solarman":    raw,
