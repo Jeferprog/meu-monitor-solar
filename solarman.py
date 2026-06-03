@@ -22,9 +22,12 @@ def get_token(email: str, password: str) -> str:
     }, timeout=15)
     resp.raise_for_status()
     data = resp.json()
-    if data.get("code") != "0":
-        raise RuntimeError(f"Erro ao obter token: {data.get('msg', data)}")
-    return data["access_token"]
+    # Na API Solarman, sucesso vem com success=true e code/msg = null
+    token = data.get("access_token")
+    if not token:
+        msg = data.get("msg") or data.get("error") or data
+        raise RuntimeError(f"Erro ao obter token: {msg}")
+    return token
 
 
 def get_realtime_data(token: str, device_sn: str = DEVICE_SN) -> dict:
@@ -34,8 +37,9 @@ def get_realtime_data(token: str, device_sn: str = DEVICE_SN) -> dict:
     }, timeout=15)
     resp.raise_for_status()
     data = resp.json()
-    if data.get("code") != "0":
-        raise RuntimeError(f"Erro ao buscar dados: {data.get('msg', data)}")
+    if not data.get("success", False) and not data.get("dataList"):
+        msg = data.get("msg") or data.get("error") or data
+        raise RuntimeError(f"Erro ao buscar dados: {msg}")
     return data
 
 
