@@ -14,7 +14,3 @@ primary_region = "gru"
   memory = "512mb"
   cpu_kind = "shared"
   cpus = 1
-
-[mounts]
-  source = "data"
-  destination = "/data"
