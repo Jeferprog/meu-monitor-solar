@@ -1,4 +1,7 @@
 import hashlib
+import datetime
+from collections import OrderedDict
+
 import requests
 
 APP_ID = "312604108356496"
@@ -121,3 +124,80 @@ def parse_realtime(raw: dict) -> dict:
         "_data_keys":       [it.get("key") for it in items],
     }
     return result
+
+
+# ─── Histórico ──────────────────────────────────────────────────────────────
+
+# timeType da API Solarman: 1=dia (intervalos de 5min), 2=mês (por dia), 3=ano (por mês)
+TIME_DAY, TIME_MONTH, TIME_YEAR = 1, 2, 3
+
+
+def get_historical(token: str, device_sn: str, start_date: str,
+                   end_date: str, time_type: int) -> dict:
+    """Busca dados históricos de um dispositivo. Datas no formato YYYY-MM-DD."""
+    url = f"{BASE_URL}/device/v1.0/historical?appId={APP_ID}&language=pt"
+    resp = requests.post(url, json={
+        "deviceSn": device_sn,
+        "startTime": start_date,
+        "endTime": end_date,
+        "timeType": time_type,
+    }, headers={"Authorization": f"Bearer {token}"}, timeout=25)
+    resp.raise_for_status()
+    data = resp.json()
+    if not data.get("success", False) and not data.get("paramDataList"):
+        msg = data.get("msg") or data.get("error") or data
+        raise RuntimeError(f"Erro no histórico: {msg}")
+    return data
+
+
+def _ponto_valor(ponto: dict, *keys):
+    """Extrai valor numérico de uma das keys dentro de um ponto histórico."""
+    dl = {it.get("key"): it for it in ponto.get("dataList", [])}
+    for k in keys:
+        it = dl.get(k)
+        if it is not None:
+            try:
+                return float(it.get("value"))
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
+def _label_tempo(ponto: dict, fmt: str) -> str:
+    ct = ponto.get("collectTime") or ponto.get("time")
+    try:
+        return datetime.datetime.fromtimestamp(int(ct)).strftime(fmt)
+    except (TypeError, ValueError):
+        return str(ct)
+
+
+def parse_curva_potencia(raw: dict) -> list:
+    """Curva de potência do dia: lista de (hora 'HH:MM', potência W)."""
+    pontos = []
+    for p in raw.get("paramDataList", []):
+        val = _ponto_valor(p, "APo_t1")
+        if val is not None:
+            pontos.append((_label_tempo(p, "%H:%M"), val))
+    return pontos
+
+
+def parse_historico_energia(raw: dict, fmt: str = "%d/%m") -> list:
+    """Produção por período: lista de (label, kWh).
+
+    Usa produção diária (Etdy_ge1); se ausente, tenta acumulada (Et_ge0).
+    """
+    pontos = []
+    for p in raw.get("paramDataList", []):
+        val = _ponto_valor(p, "Etdy_ge1", "Et_ge0")
+        if val is not None:
+            pontos.append((_label_tempo(p, fmt), val))
+    return pontos
+
+
+def combinar_series(series_list: list) -> list:
+    """Soma várias séries (lista de (label, valor)) alinhando pelos labels."""
+    acc = OrderedDict()
+    for serie in series_list:
+        for label, v in serie:
+            acc[label] = acc.get(label, 0) + (v or 0)
+    return list(acc.items())

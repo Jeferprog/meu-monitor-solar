@@ -1,4 +1,6 @@
 import streamlit as st
+import pandas as pd
+import datetime
 import omnik
 import solarman
 import time
@@ -9,22 +11,83 @@ DEFAULT_SN = 645450063
 
 SOLARMAN_EMAIL = "liaejefer@hotmail.com"
 SOLARMAN_PASSWORD = "Je08mwd2501L@"
-SOLARMAN_DEVICE_SN = solarman.DEVICE_SN
 
-st.set_page_config(page_title="Monitor Solar", page_icon="☀️", layout="centered")
-st.title("☀️ Monitor Solar — Omniksol-3k-TL2")
+st.set_page_config(page_title="Monitor Solar — Residência Deimling", page_icon="☀️", layout="centered")
+st.title("☀️ Monitor Solar — Residência Deimling")
 
 # ─── Sidebar ─────────────────────────────────────────────────────────────────
 
 st.sidebar.header("Configuração")
-
 fonte = st.sidebar.radio("Fonte de dados", ["☁️ Solarman (nuvem)", "🏠 Inversor local (TCP)"])
+
+
+# ─── Helpers Solarman ─────────────────────────────────────────────────────────
+
+def _coletar(token, escolha):
+    """Retorna (dados_atuais, metodo) para a escolha de dispositivo."""
+    if escolha.startswith("🔆"):
+        lista = [solarman.parse_realtime(solarman.get_realtime_data(token, sn))
+                 for sn in solarman.DEVICES.values()]
+        return solarman.combinar(lista), "Usina (somada)"
+    sn = solarman.DEVICES[escolha]
+    return solarman.parse_realtime(solarman.get_realtime_data(token, sn)), escolha
+
+
+def _sns_da_escolha(escolha):
+    if escolha.startswith("🔆"):
+        return list(solarman.DEVICES.values())
+    return [solarman.DEVICES[escolha]]
+
+
+def _coletar_historico(token, escolha):
+    """Busca curva do dia, histórico diário (mês) e mensal (ano)."""
+    hoje = datetime.date.today()
+    ini_mes = hoje.replace(day=1)
+    ini_ano = hoje.replace(month=1, day=1)
+    sns = _sns_da_escolha(escolha)
+
+    curvas, diarios, mensais = [], [], []
+    for sn in sns:
+        try:
+            r = solarman.get_historical(token, sn, str(hoje), str(hoje), solarman.TIME_DAY)
+            curvas.append(solarman.parse_curva_potencia(r))
+        except Exception:
+            pass
+        try:
+            r = solarman.get_historical(token, sn, str(ini_mes), str(hoje), solarman.TIME_MONTH)
+            diarios.append(solarman.parse_historico_energia(r, "%d/%m"))
+        except Exception:
+            pass
+        try:
+            r = solarman.get_historical(token, sn, str(ini_ano), str(hoje), solarman.TIME_YEAR)
+            mensais.append(solarman.parse_historico_energia(r, "%m/%Y"))
+        except Exception:
+            pass
+
+    return {
+        "curva":   solarman.combinar_series(curvas),
+        "diario":  solarman.combinar_series(diarios),
+        "mensal":  solarman.combinar_series(mensais),
+    }
+
 
 # ─── Modo Solarman ────────────────────────────────────────────────────────────
 
 if fonte == "☁️ Solarman (nuvem)":
     opcoes = ["🔆 Usina (somar os dois)"] + list(solarman.DEVICES.keys())
-    escolha = st.sidebar.selectbox("Dispositivo", options=opcoes)
+    if 'device_choice' not in st.session_state:
+        st.session_state['device_choice'] = opcoes[0]
+
+    # Botões de seleção de dispositivo abaixo do título
+    cols = st.columns(len(opcoes))
+    rotulos_curtos = ["🔆 Usina", "Inversor", "Micro-inversor"]
+    for col, opc, rot in zip(cols, opcoes, rotulos_curtos):
+        tipo = "primary" if st.session_state['device_choice'] == opc else "secondary"
+        if col.button(rot, use_container_width=True, type=tipo, key=f"btn_{opc}"):
+            st.session_state['device_choice'] = opc
+            st.rerun()
+
+    escolha = st.session_state['device_choice']
 
     col_btn, col_auto = st.columns([1, 1])
     with col_btn:
@@ -41,24 +104,11 @@ if fonte == "☁️ Solarman (nuvem)":
         with st.spinner("Conectando à API Solarman..."):
             try:
                 token = solarman.get_token(SOLARMAN_EMAIL, SOLARMAN_PASSWORD)
-
-                if escolha.startswith("🔆"):
-                    # Soma todos os dispositivos cadastrados
-                    lista = []
-                    for label, sn in solarman.DEVICES.items():
-                        raw = solarman.get_realtime_data(token, sn)
-                        lista.append(solarman.parse_realtime(raw))
-                    dados = solarman.combinar(lista)
-                    metodo = "Solarman API — Usina (somada)"
-                else:
-                    sn = solarman.DEVICES[escolha]
-                    raw = solarman.get_realtime_data(token, sn)
-                    dados = solarman.parse_realtime(raw)
-                    metodo = f"Solarman API — {escolha}"
-
+                dados, sufixo = _coletar(token, escolha)
                 st.session_state['dados'] = dados
+                st.session_state['metodo'] = f"Solarman API — {sufixo}"
                 st.session_state['last_update'] = time.time()
-                st.session_state['metodo'] = metodo
+                st.session_state['historico'] = _coletar_historico(token, escolha)
             except Exception as e:
                 st.error(f"Erro ao consultar Solarman: {e}")
                 st.stop()
@@ -156,6 +206,7 @@ else:
                 if dados:
                     st.session_state['dados'] = dados
                     st.session_state['last_update'] = time.time()
+                    st.session_state.pop('historico', None)
 
         if auto:
             time.sleep(30)
@@ -192,6 +243,38 @@ if 'dados' in st.session_state:
     if temp and temp > 0:
         st.caption(f"🌡️ Temperatura do inversor: {temp} °C")
 
+    # ─── Gráficos e histórico (Solarman) ──────────────────────────────────────
+    hist = st.session_state.get('historico')
+    if hist:
+        curva = hist.get('curva') or []
+        diario = hist.get('diario') or []
+        mensal = hist.get('mensal') or []
+
+        if curva:
+            st.divider()
+            st.subheader("📈 Produção de hoje")
+            df = pd.DataFrame(curva, columns=["Hora", "Potência (W)"]).set_index("Hora")
+            st.area_chart(df, height=240)
+
+        if diario or mensal:
+            st.divider()
+            st.subheader("📅 Histórico de produção")
+            tab_d, tab_m = st.tabs(["Diário (mês atual)", "Mensal (ano)"])
+            with tab_d:
+                if diario:
+                    df = pd.DataFrame(diario, columns=["Dia", "kWh"]).set_index("Dia")
+                    st.bar_chart(df, height=260)
+                    st.caption(f"Total no período: **{df['kWh'].sum():.2f} kWh**")
+                else:
+                    st.info("Sem dados diários disponíveis.")
+            with tab_m:
+                if mensal:
+                    df = pd.DataFrame(mensal, columns=["Mês", "kWh"]).set_index("Mês")
+                    st.bar_chart(df, height=260)
+                    st.caption(f"Total no ano: **{df['kWh'].sum():.2f} kWh**")
+                else:
+                    st.info("Sem dados mensais disponíveis.")
+
     if d.get('ac_tensao') or d.get('pv1_tensao'):
         st.divider()
         st.subheader("Painéis (CC)")
@@ -208,7 +291,7 @@ if 'dados' in st.session_state:
         a2.metric("Frequência", f"{d.get('ac_frequencia', '—')} Hz")
 
     with st.expander("🔧 Dados brutos"):
-        raw_sm = d.get('_raw_solarman')
+        raw_sm = d.get('_raw_solarman') or d.get('_combinado')
         if raw_sm:
             st.json(raw_sm)
         else:
