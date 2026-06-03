@@ -44,32 +44,54 @@ def get_realtime_data(token: str, device_sn: str = DEVICE_SN) -> dict:
 
 
 def parse_realtime(raw: dict) -> dict:
-    """Convert Solarman API response to the same schema used by omnik.parse_response."""
-    dl = {item["key"]: item for item in raw.get("dataList", [])}
+    """Convert Solarman API response to the same schema used by omnik.parse_response.
 
-    def val(key, default=0):
-        item = dl.get(key)
-        if item is None:
-            return default
+    Os códigos (`key`) da Solarman variam por modelo de inversor, então casamos
+    por trechos do nome (`name`) e da `key`, em vez de nomes exatos.
+    """
+    items = raw.get("dataList", [])
+
+    def _num(v):
         try:
-            return float(item["value"])
+            return float(v)
         except (TypeError, ValueError):
-            return item.get("value", default)
+            return None
+
+    def find(*needles, prefer_unit=None):
+        """Retorna o primeiro valor numérico cujo name/key contém algum dos trechos."""
+        needles = [n.lower() for n in needles]
+        for it in items:
+            name = str(it.get("name", "")).lower()
+            key = str(it.get("key", "")).lower()
+            haystack = name + " " + key
+            if any(n in haystack for n in needles):
+                if prefer_unit and prefer_unit.lower() not in str(it.get("unit", "")).lower():
+                    continue
+                v = _num(it.get("value"))
+                if v is not None:
+                    return v
+        return 0
 
     result = {
-        "ac_potencia":      val("AC_ActivePower") or val("activePower") or val("AC_Power"),
-        "energia_hoje":     val("E_Today") or val("dailyEnergy") or val("daily_power"),
-        "energia_total":    val("E_Total") or val("totalEnergy") or val("total_power"),
-        "temperatura":      val("DC_Temp") or val("inverterTemperature"),
-        "pv1_tensao":       val("DC_Voltage1") or val("PV1_Voltage"),
-        "pv1_corrente":     val("DC_Current1") or val("PV1_Current"),
-        "pv2_tensao":       val("DC_Voltage2") or val("PV2_Voltage"),
-        "pv2_corrente":     val("DC_Current2") or val("PV2_Current"),
-        "ac_tensao":        val("AC_Voltage1") or val("GridVoltage"),
-        "ac_frequencia":    val("AC_Freq1") or val("GridFrequency"),
+        # Potência ativa de saída AC (W)
+        "ac_potencia":      find("total ac output power", "output active power",
+                                 "active power", "generation power", "ac_power", "apo"),
+        # Energia gerada hoje (kWh)
+        "energia_hoje":     find("daily production", "production today", "today production",
+                                 "daily generation", "e_today", "etoday", "et_ge0"),
+        # Energia acumulada total (kWh)
+        "energia_total":    find("cumulative production", "total production",
+                                 "total generation", "e_total", "etotal", "et_ge"),
+        "temperatura":      find("temperature", "temp"),
+        "pv1_tensao":       find("dc voltage pv1", "pv1 voltage", "voltage pv1", "dv1"),
+        "pv1_corrente":     find("dc current pv1", "pv1 current", "current pv1", "dc1"),
+        "pv2_tensao":       find("dc voltage pv2", "pv2 voltage", "voltage pv2", "dv2"),
+        "pv2_corrente":     find("dc current pv2", "pv2 current", "current pv2", "dc2"),
+        "ac_tensao":        find("ac voltage", "grid voltage", "av1"),
+        "ac_frequencia":    find("ac frequency", "grid frequency", "frequency"),
         "modelo":           raw.get("deviceType", "Solarman"),
         "potencia_nominal": 0,
         "_raw_solarman":    raw,
-        "_data_keys":       list(dl.keys()),
+        "_data_keys":       [it.get("key") for it in items],
     }
     return result
