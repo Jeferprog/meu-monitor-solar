@@ -13,6 +13,16 @@ jobs:
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
+      # Remove máquinas antigas (com volume órfão) antes de recriar limpas
+      - name: Destrói máquinas antigas
+        run: |
+          for id in $(flyctl machines list --app meu-monitor-solar --json | jq -r '.[].id'); do
+            echo "Destruindo máquina $id"
+            flyctl machine destroy "$id" --force --app meu-monitor-solar
+          done
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
       - run: flyctl deploy --remote-only --yes
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
