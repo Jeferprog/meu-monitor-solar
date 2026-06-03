@@ -47,27 +47,32 @@ def _coletar_historico(token, escolha):
     sns = _sns_da_escolha(escolha)
 
     curvas, diarios, mensais = [], [], []
+    diag = {}
     for sn in sns:
         try:
             r = solarman.get_historical(token, sn, str(hoje), str(hoje), solarman.TIME_DAY)
             curvas.append(solarman.parse_curva_potencia(r))
-        except Exception:
-            pass
+            diag[f"dia_{sn}"] = r
+        except Exception as e:
+            diag[f"dia_{sn}_erro"] = str(e)
         try:
             r = solarman.get_historical(token, sn, str(ini_mes), str(hoje), solarman.TIME_MONTH)
             diarios.append(solarman.parse_historico_energia(r, "%d/%m"))
-        except Exception:
-            pass
+            diag[f"mes_{sn}"] = r
+        except Exception as e:
+            diag[f"mes_{sn}_erro"] = str(e)
         try:
             r = solarman.get_historical(token, sn, str(ini_ano), str(hoje), solarman.TIME_YEAR)
             mensais.append(solarman.parse_historico_energia(r, "%m/%Y"))
-        except Exception:
-            pass
+            diag[f"ano_{sn}"] = r
+        except Exception as e:
+            diag[f"ano_{sn}_erro"] = str(e)
 
     return {
         "curva":   solarman.combinar_series(curvas),
         "diario":  solarman.combinar_series(diarios),
         "mensal":  solarman.combinar_series(mensais),
+        "_diag":   diag,
     }
 
 
@@ -85,6 +90,7 @@ if fonte == "☁️ Solarman (nuvem)":
         tipo = "primary" if st.session_state['device_choice'] == opc else "secondary"
         if col.button(rot, use_container_width=True, type=tipo, key=f"btn_{opc}"):
             st.session_state['device_choice'] = opc
+            st.session_state['trigger_fetch'] = True   # busca automática ao trocar
             st.rerun()
 
     escolha = st.session_state['device_choice']
@@ -95,6 +101,9 @@ if fonte == "☁️ Solarman (nuvem)":
     with col_auto:
         auto = st.toggle("Auto (60s)", value=False)
 
+    # Dispara busca ao trocar de inversor (botões) ou no auto-refresh
+    if st.session_state.pop('trigger_fetch', False):
+        conectar = True
     if auto and 'last_update' not in st.session_state:
         conectar = True
     elif auto and time.time() - st.session_state.get('last_update', 0) >= 60:
@@ -274,6 +283,10 @@ if 'dados' in st.session_state:
                     st.caption(f"Total no ano: **{df['kWh'].sum():.2f} kWh**")
                 else:
                     st.info("Sem dados mensais disponíveis.")
+
+        if not (diario or mensal) and hist.get('_diag'):
+            with st.expander("🩺 Diagnóstico do histórico (resposta crua)"):
+                st.json(hist['_diag'])
 
     if d.get('ac_tensao') or d.get('pv1_tensao'):
         st.divider()

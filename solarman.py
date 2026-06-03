@@ -4,6 +4,12 @@ from collections import OrderedDict
 
 import requests
 
+try:
+    from zoneinfo import ZoneInfo
+    TZ = ZoneInfo("America/Sao_Paulo")
+except Exception:
+    TZ = datetime.timezone(datetime.timedelta(hours=-3))
+
 APP_ID = "312604108356496"
 APP_SECRET = "17d7a339e0b089d510f40f86141aec40"
 BASE_URL = "https://globalapi.solarmanpv.com"
@@ -102,21 +108,21 @@ def parse_realtime(raw: dict) -> dict:
         return None
 
     result = {
-        # Chaves reais do inversor (confirmadas via Dados brutos)
-        "ac_potencia":      val("APo_t1"),       # Saída CA Potência Total (Ativa) - W
-        "energia_hoje":     val("Etdy_ge1"),     # Produção diária (ativa) - kWh
-        "energia_total":    val("Et_ge0"),       # Produção acumulada (ativa) - kWh
-        "temperatura":      val("INV_T0"),       # Temperatura do Inversor - °C
+        # Chaves reais (inversor e micro-inversor têm códigos um pouco diferentes)
+        "ac_potencia":      val("APo_t1"),                 # Potência Total Saída CA (Ativa) - W
+        "energia_hoje":     val("Etdy_ge0", "Etdy_ge1"),   # Produção diária ativa - kWh
+        "energia_total":    val("Et_ge0"),                 # Produção total ativa - kWh
+        "temperatura":      val("INV_T0", "AC_RDT_T1"),    # Temperatura - °C
         "pv1_tensao":       val("DV1"),
         "pv1_corrente":     val("DC1"),
         "pv1_potencia":     val("DP1"),
         "pv2_tensao":       val("DV2"),
         "pv2_corrente":     val("DC2"),
         "pv2_potencia":     val("DP2"),
-        "ac_tensao":        val("AV1"),           # Voltagem AC R/U/A
+        "ac_tensao":        val("AV1"),                    # Voltagem AC
         "ac_corrente":      val("AC1"),
-        "ac_frequencia":    val("A_Fo1"),         # Frequência de Saída AC R
-        "estado":           text("INV_ST1"),      # Estado do inversor
+        "ac_frequencia":    val("A_Fo1", "AF1"),           # Frequência AC
+        "estado":           text("INV_ST1", "ST_PG1"),     # Estado do inversor/rede
         "horas_operacao":   val("t_w_hou1"),
         "modelo":           raw.get("deviceType", "Solarman"),
         "potencia_nominal": 0,
@@ -164,9 +170,9 @@ def _ponto_valor(ponto: dict, *keys):
 
 
 def _label_tempo(ponto: dict, fmt: str) -> str:
-    ct = ponto.get("collectTime") or ponto.get("time")
+    ct = ponto.get("collectTime") or ponto.get("time") or ponto.get("collectionTime")
     try:
-        return datetime.datetime.fromtimestamp(int(ct)).strftime(fmt)
+        return datetime.datetime.fromtimestamp(int(ct), TZ).strftime(fmt)
     except (TypeError, ValueError):
         return str(ct)
 
@@ -184,11 +190,20 @@ def parse_curva_potencia(raw: dict) -> list:
 def parse_historico_energia(raw: dict, fmt: str = "%d/%m") -> list:
     """Produção por período: lista de (label, kWh).
 
-    Usa produção diária (Etdy_ge1); se ausente, tenta acumulada (Et_ge0).
+    Tenta produção diária ativa (Etdy_ge0/Etdy_ge1); cai para campos genéricos
+    de geração ou para o produto encontrado em 'generationValue'.
     """
     pontos = []
     for p in raw.get("paramDataList", []):
-        val = _ponto_valor(p, "Etdy_ge1", "Et_ge0")
+        val = _ponto_valor(p, "Etdy_ge0", "Etdy_ge1", "Et_ge0")
+        if val is None:
+            # alguns formatos trazem direto no ponto
+            for k in ("generationValue", "value", "energy"):
+                try:
+                    val = float(p.get(k))
+                    break
+                except (TypeError, ValueError):
+                    continue
         if val is not None:
             pontos.append((_label_tempo(p, fmt), val))
     return pontos
