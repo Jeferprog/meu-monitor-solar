@@ -185,14 +185,20 @@ def parse_curva_potencia(raw: dict) -> list:
         if v is not None and v > 0:
             pontos.append((_label_tempo(p, "%H:%M"), v))
 
-    if not pontos:
+    if len(pontos) < 3:
         return pontos
 
-    # Remove outliers: descarta pontos acima de 2× a mediana do dia
-    valores = sorted(v for _, v in pontos)
-    mediana = valores[len(valores) // 2]
-    limite = mediana * 2.0
-    return [(h, v) for h, v in pontos if v <= limite]
+    # Remove spikes isolados: descarta ponto onde valor > 1.5× a média dos vizinhos
+    resultado = [pontos[0]]
+    for i in range(1, len(pontos) - 1):
+        h, v = pontos[i]
+        vizinho_anterior = pontos[i - 1][1]
+        vizinho_proximo = pontos[i + 1][1]
+        media_vizinhos = (vizinho_anterior + vizinho_proximo) / 2
+        if media_vizinhos == 0 or v <= media_vizinhos * 1.5:
+            resultado.append((h, v))
+    resultado.append(pontos[-1])
+    return resultado
 
 
 def _fmt_label(ct, kind: str) -> str:
