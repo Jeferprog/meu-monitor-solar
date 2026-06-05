@@ -181,10 +181,18 @@ def parse_curva_potencia(raw: dict) -> list:
     """Curva de potência do dia: lista de (hora 'HH:MM', potência W)."""
     pontos = []
     for p in raw.get("paramDataList", []):
-        val = _ponto_valor(p, "APo_t1")
-        if val is not None and val > 0:
-            pontos.append((_label_tempo(p, "%H:%M"), val))
-    return pontos
+        v = _ponto_valor(p, "APo_t1")
+        if v is not None and v > 0:
+            pontos.append((_label_tempo(p, "%H:%M"), v))
+
+    if not pontos:
+        return pontos
+
+    # Remove outliers: descarta pontos acima de 2× a mediana do dia
+    valores = sorted(v for _, v in pontos)
+    mediana = valores[len(valores) // 2]
+    limite = mediana * 2.0
+    return [(h, v) for h, v in pontos if v <= limite]
 
 
 def _fmt_label(ct, kind: str) -> str:
