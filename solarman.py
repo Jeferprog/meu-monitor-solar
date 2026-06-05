@@ -182,7 +182,7 @@ def parse_curva_potencia(raw: dict) -> list:
     pontos = []
     for p in raw.get("paramDataList", []):
         val = _ponto_valor(p, "APo_t1")
-        if val is not None:
+        if val is not None and val > 0:
             pontos.append((_label_tempo(p, "%H:%M"), val))
     return pontos
 
