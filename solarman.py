@@ -188,16 +188,14 @@ def parse_curva_potencia(raw: dict) -> list:
     if len(pontos) < 3:
         return pontos
 
-    # Remove spikes isolados: descarta ponto onde valor > 1.5× a média dos vizinhos
-    resultado = [pontos[0]]
-    for i in range(1, len(pontos) - 1):
-        h, v = pontos[i]
-        vizinho_anterior = pontos[i - 1][1]
-        vizinho_proximo = pontos[i + 1][1]
-        media_vizinhos = (vizinho_anterior + vizinho_proximo) / 2
-        if media_vizinhos == 0 or v <= media_vizinhos * 1.5:
-            resultado.append((h, v))
-    resultado.append(pontos[-1])
+    # Suaviza com média móvel de janela 5 (igual ao app Solarman)
+    resultado = []
+    n = len(pontos)
+    for i, (h, _) in enumerate(pontos):
+        i0 = max(0, i - 2)
+        i1 = min(n, i + 3)
+        media = sum(v for _, v in pontos[i0:i1]) / (i1 - i0)
+        resultado.append((h, round(media, 1)))
     return resultado
 
 
